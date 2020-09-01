@@ -1,0 +1,36 @@
+@=
+projectType="application_plugin";
+projectName="vr_scene";
+projectGUID="19EA967B-9C33-49E1-8D9B-59EE2927B2B2";
+addProjectDirs=[CGV_DIR."/plugins", CGV_DIR."/libs", CGV_DIR."/test"];
+
+// add rect_pack as dependent library
+addProjectDeps=[
+	"cgv_utils", "cgv_type", "cgv_data", "cgv_base", "cgv_math", "cgv_media", "cgv_gui", "cgv_render", 
+	"cgv_gl", "cg_vr", "rect_pack",	
+	"cgv_viewer", 
+	"cg_fltk", "crg_grid", "cg_ext", "cmi_io", "crg_vr_view", 
+	"vr_emulator", "openvr_driver"
+];
+
+addIncDirs=[INPUT_DIR, CGV_DIR."/libs", CGV_DIR."/test"];
+
+// source files of label manager only without adding the whole cg_nui library
+sourceFiles=[
+	CGV_DIR."/libs/cg_nui/label_manager.cxx", 
+	CGV_DIR."/libs/cg_nui/label_manager.h",
+	INPUT_DIR."/config.def",
+	INPUT_DIR."/vr_scene.h",
+	INPUT_DIR."/vr_scene.cxx"
+];
+
+// add "CG_NUI_EXPORTS" to shared defines such that label_manager.cxx compiles
+addSharedDefines=[
+	"VR_SCENE_EXPORTS", "CG_NUI_EXPORTS"
+
+];
+
+addCommandLineArguments=[
+	after("type(shader_config):shader_path='".INPUT_DIR.";".CGV_DIR."/plugins/crg_vr_view;".CGV_DIR."/libs/cgv_gl/glsl'","cg_fltk"),
+	'config:"'.INPUT_DIR.'/config.def"'
+];

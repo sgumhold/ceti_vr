@@ -1,0 +1,33 @@
+@=
+projectType="application_plugin";
+projectName="vr_draw";
+projectGUID="7829D0B0-8AEE-4ED5-9EA2-90D7FDAD1585";
+//referenceDeps = 0;
+addProjectDirs=[CGV_DIR."/plugins", CGV_DIR."/libs", CGV_DIR."/test"];
+addProjectDeps=[
+	"cgv_utils", "cgv_type", "cgv_data", "cgv_base", "cgv_math", "cgv_media", "cgv_gui", "cgv_render", 
+	"cgv_gl", "cg_vr", "rect_pack",
+	"cgv_viewer", 
+	"cg_fltk", "crg_grid", "cg_ext", "cmi_io", "crg_vr_view", 
+	"vr_emulator", "openvr_driver"
+];
+addIncDirs=[INPUT_DIR, INPUT_DIR."/../01_vr_scene", CGV_DIR."/libs", CGV_DIR."/test"];
+
+// source files of label manager only without adding the whole cg_nui library
+sourceFiles=[
+	CGV_DIR."/libs/cg_nui/label_manager.cxx", 
+	CGV_DIR."/libs/cg_nui/label_manager.h",
+	INPUT_DIR."/config.def",
+	INPUT_DIR."/vr_tool.h",
+	INPUT_DIR."/vr_draw.cxx",
+	INPUT_DIR."/vr_draw.h",
+	INPUT_DIR."/../01_vr_scene/vr_scene.h",
+	INPUT_DIR."/../01_vr_scene/vr_scene.cxx"
+];
+
+
+addSharedDefines=["VR_DRAW_EXPORTS", "CG_NUI_EXPORTS"];
+addCommandLineArguments=[
+	after("type(shader_config):shader_path='".INPUT_DIR.";".CGV_DIR."/plugins/crg_vr_view;".CGV_DIR."/libs/cgv_gl/glsl'","cg_fltk"),
+	'config:"'.INPUT_DIR.'/config.def"'
+];
