@@ -55,6 +55,9 @@ protected:
 	std::vector<vec2> label_extents;
 	std::vector<vec4> label_texture_ranges;
 
+	// label visibility
+	std::vector<bool> label_visibilities;
+
 	/// for rectangle renderer a plane_render_style is needed
 	cgv::render::plane_render_style prs;
 public:
@@ -66,6 +69,15 @@ public:
 		CS_HEAD,
 		CS_LEFT_CONTROLLER,
 		CS_RIGHT_CONTROLLER
+	};
+	/// different alignments
+	enum LabelAlignment
+	{
+		LA_CENTER,
+		LA_LEFT,
+		LA_RIGHT,
+		LA_BOTTOM,
+		LA_TOP
 	};
 	/// for each label coordinate system
 	std::vector<CoordinateSystem> label_coord_systems;
@@ -79,6 +91,7 @@ public:
 		label_extents.push_back(vec2(1.0f));
 		label_texture_ranges.push_back(vec4(0.0f));
 		label_coord_systems.push_back(CS_LAB);
+		label_visibilities.push_back(true);
 		return li;
 	}
 	/// update label text
@@ -86,12 +99,18 @@ public:
 	/// fix the label size based on the font metrics even when text is changed later on
 	void fix_label_size(uint32_t li) { lm.fix_label_size(li); }
 	/// place a label relative to given coordinate system
-	void place_label(uint32_t li, const vec3& pos, const quat& ori, CoordinateSystem coord_system) {
-		label_positions[li] = pos;
+	void place_label(uint32_t li, const vec3& pos, const quat& ori = quat(), 
+		             CoordinateSystem coord_system = CS_LAB, LabelAlignment align = LA_CENTER, float scale = 1.0f) {
+		label_extents[li] = vec2(scale * pixel_scale * lm.get_label(li).get_width(), scale * pixel_scale * lm.get_label(li).get_height());
+		static vec2 offsets[5] = { vec2(0.0f,0.0f), vec2(0.5f,0.0f), vec2(-0.5f,0.0f), vec2(0.0f,0.5f), vec2(0.0f,-0.5f) };
+		label_positions[li] = pos + ori.get_rotated(vec3(offsets[align] * label_extents[li],0.0f));
 		label_orientations[li] = ori;
 		label_coord_systems[li] = coord_system;
-		label_extents[li] = vec2(pixel_scale * lm.get_label(li).get_width(), pixel_scale * lm.get_label(li).get_height());
 	}
+	/// hide a label
+	void hide_label(uint32_t li) { label_visibilities[li] = false; }
+	/// show a label
+	void show_label(uint32_t li) { label_visibilities[li] = true; }
 	//@}
 
 	//@name tube graph for 3d drawing
@@ -144,6 +163,8 @@ protected:
 	uint32_t nr_edges;
 	/// label index to show statistics
 	uint32_t li_stats;
+	/// labels to show help on controllers
+	uint32_t li_help[2];
 	/// clear the current scene
 	void clear_scene();
 	/// generate a new scene file name

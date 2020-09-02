@@ -159,12 +159,22 @@ bool vr_scene::init(cgv::render::context& ctx)
 	lm.set_font_size(36.0f);
 	lm.set_text_color(rgba(0, 0, 0, 1));
 
+	for (int ci = 0; ci < 2; ++ci) {
+		li_help[ci] = add_label("TPAD_Right .. next/new scene\nTPAD_Left  .. prev scene\nTPAD_Down  .. save scene",
+			rgba(ci == 0 ? 0.8f : 0.4f, 0.4f, ci == 1 ? 0.8f : 0.4f, 1.0f));
+		fix_label_size(li_help[ci]);		
+		place_label(li_help[ci], vec3(ci==0?-0.05f:0.05f, 0.0f, 0.0f), quat(vec3(1, 0, 0), -1.5f), 
+			ci == 0 ? CS_LEFT_CONTROLLER : CS_RIGHT_CONTROLLER, ci == 0 ? LA_RIGHT:LA_LEFT, 0.2f);
+		hide_label(li_help[ci]);
+	}
+
 	li_stats = add_label(
 		"scene index: 000000\n"
 		"nr vertices: 000000\n"
 		"nr edges:    000000", rgba(0.8f, 0.6f, 0.0f, 1.0f));
 	fix_label_size(li_stats);
 	place_label(li_stats, vec3(0.0f, 0.01f, 0.0f), quat(vec3(1, 0, 0), -1.5f), CS_TABLE);
+
 	auto view_ptr = find_view_as_node();
 	if (view_ptr) {
 		// if the view points to a vr_view_interactor
@@ -196,14 +206,29 @@ void vr_scene::init_frame(cgv::render::context& ctx)
 	bool repack = lm.is_packing_outofdate();
 	std::stringstream ss;
 	ss << "scene index: " << current_scene_idx << "\n"
-	   << "nr vertices: " << nr_vertices << "\n"
-	   << "nr edges:    " << nr_edges;
+		<< "nr vertices: " << nr_vertices << "\n"
+		<< "nr edges:    " << nr_edges;
 	ss.flush();
 	update_label_text(li_stats, ss.str());
 	lm.ensure_texture_uptodate(ctx);
 	if (repack) {
 		for (uint32_t li = 0; li < label_texture_ranges.size(); ++li)
 			label_texture_ranges[li] = lm.get_texcoord_range(li);
+	}
+
+	// update visibility of visibility changing labels
+	if (vr_view_ptr) {
+		vec3 view_dir = -reinterpret_cast<const vec3&>(vr_view_ptr->get_current_vr_state()->hmd.pose[6]);
+		vec3 view_pos = reinterpret_cast<const vec3&>(vr_view_ptr->get_current_vr_state()->hmd.pose[9]);
+		for (int ci = 0; ci < 2; ++ci) {
+			vec3 controller_pos = reinterpret_cast<const vec3&>(vr_view_ptr->get_current_vr_state()->controller[ci].pose[9]);
+			float controller_depth = dot(view_dir, controller_pos - view_pos);
+			float controller_dist = (view_pos + controller_depth * view_dir - controller_pos).length();
+			if (view_dir.y() < -0.5f && controller_depth / controller_dist > 5.0f)
+				show_label(li_help[ci]);
+			else
+				hide_label(li_help[ci]);
+		}
 	}
 }
 
@@ -232,9 +257,26 @@ void vr_scene::draw(cgv::render::context& ctx)
 	br.set_color_array(ctx, box_colors);
 	br.render(ctx, 0, boxes.size());
 
+	// draw vertex edge graph
+	if (!vertices.empty()) {
+		sr.set_position_array(ctx, &vertices.front().position, vertices.size(), sizeof(vertex));
+		sr.set_radius_array(ctx, &vertices.front().radius, vertices.size(), sizeof(vertex));
+		sr.set_color_array(ctx, &vertices.front().color, vertices.size(), sizeof(vertex));
+		sr.render(ctx, 0, (GLsizei)vertices.size());
+	}
+	if (!edges.empty()) {
+		rcr.set_position_array(ctx, &vertices.front().position, vertices.size(), sizeof(vertex));
+		rcr.set_radius_array(ctx, &vertices.front().radius, vertices.size(), sizeof(vertex));
+		rcr.set_color_array(ctx, &vertices.front().color, vertices.size(), sizeof(vertex));
+		rcr.set_indices(ctx, &edges.front().origin_vi, 2 * edges.size());
+		rcr.render(ctx, 0, (GLsizei)(2 * edges.size()));
+	}
+
 	// compute label poses in lab coordinate system
 	std::vector<vec3> P;
 	std::vector<quat> Q;
+	std::vector<vec2> E;
+	std::vector<vec4> T;
 	mat34 pose[5];
 	bool valid[5];
 	valid[CS_LAB] = valid[CS_TABLE] = true;
@@ -251,40 +293,23 @@ void vr_scene::draw(cgv::render::context& ctx)
 	if (valid[CS_RIGHT_CONTROLLER])
 		pose[CS_RIGHT_CONTROLLER] = reinterpret_cast<const mat34&>(vr_view_ptr->get_current_vr_state()->controller[1].pose[0]);
 	for (uint32_t li = 0; li < label_coord_systems.size(); ++li) {
-		if (valid[label_coord_systems[li]]) {
-			mat34 label_pose = cgv::math::pose_construct(label_orientations[li], label_positions[li]);
-			cgv::math::pose_transform(pose[label_coord_systems[li]], label_pose);
-			P.push_back(cgv::math::pose_position(label_pose));
-			Q.push_back(quat(cgv::math::pose_orientation(label_pose)));
-		}
-		else {
-			P.push_back(vec3(0.0f, -10.0f, 0.0f));
-			Q.push_back(quat());
-		}
+		if (!label_visibilities[li] || !valid[label_coord_systems[li]])
+			continue;
+		mat34 label_pose = cgv::math::pose_construct(label_orientations[li], label_positions[li]);
+		cgv::math::pose_transform(pose[label_coord_systems[li]], label_pose);
+		P.push_back(cgv::math::pose_position(label_pose));
+		Q.push_back(quat(cgv::math::pose_orientation(label_pose)));
+		E.push_back(label_extents[li]);
+		T.push_back(label_texture_ranges[li]);
 	}
 	// draw labels
 	rr.set_position_array(ctx, P);
 	rr.set_rotation_array(ctx, Q);
-	rr.set_extent_array(ctx, label_extents);
-	rr.set_texcoord_array(ctx, label_texture_ranges);
+	rr.set_extent_array(ctx, E);
+	rr.set_texcoord_array(ctx, T);
 	lm.get_texture()->enable(ctx);
-	rr.render(ctx, 0, lm.get_nr_labels());
+	rr.render(ctx, 0, P.size());
 	lm.get_texture()->disable(ctx);
-
-	// draw vertex edge graph
-	if (!vertices.empty()) {
-		sr.set_position_array(ctx, &vertices.front().position, vertices.size(), sizeof(vertex));
-		sr.set_radius_array(ctx, &vertices.front().radius, vertices.size(), sizeof(vertex));
-		sr.set_color_array(ctx, &vertices.front().color, vertices.size(), sizeof(vertex));
-		sr.render(ctx, 0, (GLsizei)vertices.size());
-	}
-	if (!edges.empty()) {
-		rcr.set_position_array(ctx, &vertices.front().position, vertices.size(), sizeof(vertex));
-		rcr.set_radius_array(ctx, &vertices.front().radius, vertices.size(), sizeof(vertex));
-		rcr.set_color_array(ctx, &vertices.front().color, vertices.size(), sizeof(vertex));
-		rcr.set_indices(ctx, &edges.front().origin_vi, 2 * edges.size());
-		rcr.render(ctx, 0, (GLsizei)(2 * edges.size()));
-	}
 }
 
 void vr_scene::clear_scene()
