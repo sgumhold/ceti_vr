@@ -302,7 +302,7 @@ public:
 			sr.render(ctx, 0, (GLsizei)P.size());
 		}
 	}
-	void finish_frame(cgv::render::context& ctx)
+	void after_finish(cgv::render::context& ctx)
 	{
 		// draw tool in case it is active
 		if (!(tool_is_active && kit_ptr && vr_view_ptr))
