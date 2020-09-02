@@ -1,0 +1,16 @@
+@=
+projectType="application_plugin";
+projectName="vr_box_stacking";
+//referenceDeps = 0;
+projectGUID="FCF82397-8CE8-4749-893C-59A6968EDC10";
+addProjectDirs=[CGV_DIR."/plugins", CGV_DIR."/libs", CGV_DIR."/test"];
+addProjectDeps=["cgv_utils", "cgv_type", "cgv_data", "cgv_base", "cgv_math",
+				"cgv_media", "cgv_gui", "cgv_render", "cmi_io",
+				"cgv_viewer", "cg_fltk", "crg_grid", "cg_ext", "cgv_gl", 
+				"crg_vr_view", 
+				"cg_vr", "vr_emulator", "openvr_driver"];
+addIncDirs=[INPUT_DIR, CGV_DIR."/libs", CGV_DIR."/test"];
+addCommandLineArguments=[
+	after("type(shader_config):shader_path='".INPUT_DIR.";".CGV_DIR."/libs/cgv_gl/glsl'","cg_fltk"),	'config:"'.INPUT_DIR.'/config.def"'
+];
+addSharedDefines=["VR_BOx_STACKING_EXPORTS"];
