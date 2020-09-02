@@ -8,6 +8,11 @@ name(main):gamma=1.0
 // construct an emulated vr kit 
 //type(vr_emulator):current_kit_index=0
 
+// configure table dimension
+//type(vr_scene):table_width=0.80
+//type(vr_scene):table_depth=0.80
+//type(vr_scene):table_height=1.20
+
 // read calibration file
 type(vr_view_interactor):calibration_file_path="D:/develop/VIVE_office.cal"
 

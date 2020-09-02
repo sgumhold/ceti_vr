@@ -182,6 +182,10 @@ protected:
 public:
 	/// standard constructor for scene
 	vr_scene();
+	/// return type name
+	std::string get_type_name() const { return "vr_scene"; }
+	/// reflect member variables
+	bool self_reflect(cgv::reflect::reflection_handler& rh);
 	/// callback on member updates to keep data structure consistent
 	void on_set(void* member_ptr);
 	//@name cgv::gui::event_handler interface

@@ -123,6 +123,19 @@ std::string vr_scene::get_new_scene_file_name() const
 	return file_name;
 }
 
+bool vr_scene::self_reflect(cgv::reflect::reflection_handler& rh)
+{
+	return 		
+		rh.reflect_member("table_color", table_color) &&
+		rh.reflect_member("table_width", table_width) &&
+		rh.reflect_member("table_depth", table_depth) &&
+		rh.reflect_member("table_height", table_height) &&
+		rh.reflect_member("table_leg color", leg_color) &&
+		rh.reflect_member("table_legs", leg_width) &&
+		rh.reflect_member("table_offset", leg_offset);
+
+}
+
 void vr_scene::on_set(void* member_ptr)
 {
 	if (member_ptr == &scene_file_path) {
@@ -217,7 +230,7 @@ void vr_scene::init_frame(cgv::render::context& ctx)
 	}
 
 	// update visibility of visibility changing labels
-	if (vr_view_ptr) {
+	if (vr_view_ptr && vr_view_ptr->get_current_vr_state()) {
 		vec3 view_dir = -reinterpret_cast<const vec3&>(vr_view_ptr->get_current_vr_state()->hmd.pose[6]);
 		vec3 view_pos = reinterpret_cast<const vec3&>(vr_view_ptr->get_current_vr_state()->hmd.pose[9]);
 		for (int ci = 0; ci < 2; ++ci) {
@@ -283,13 +296,13 @@ void vr_scene::draw(cgv::render::context& ctx)
 	pose[CS_LAB].identity();
 	pose[CS_TABLE].identity();
 	cgv::math::pose_position(pose[CS_TABLE]) = vec3(0.0f, table_height, 0.0f);
-	valid[CS_HEAD] = vr_view_ptr->get_current_vr_state()->hmd.status == vr::VRS_TRACKED;
+	valid[CS_HEAD] = vr_view_ptr->get_current_vr_state() && vr_view_ptr->get_current_vr_state()->hmd.status == vr::VRS_TRACKED;
 	if (valid[CS_HEAD])
 		pose[CS_HEAD] = reinterpret_cast<const mat34&>(vr_view_ptr->get_current_vr_state()->hmd.pose[0]);
-	valid[CS_LEFT_CONTROLLER] = vr_view_ptr->get_current_vr_state()->controller[0].status == vr::VRS_TRACKED;
+	valid[CS_LEFT_CONTROLLER] = vr_view_ptr->get_current_vr_state() && vr_view_ptr->get_current_vr_state()->controller[0].status == vr::VRS_TRACKED;
 	if (valid[CS_LEFT_CONTROLLER])
 		pose[CS_LEFT_CONTROLLER] = reinterpret_cast<const mat34&>(vr_view_ptr->get_current_vr_state()->controller[0].pose[0]);
-	valid[CS_RIGHT_CONTROLLER] = vr_view_ptr->get_current_vr_state()->controller[1].status == vr::VRS_TRACKED;
+	valid[CS_RIGHT_CONTROLLER] = vr_view_ptr->get_current_vr_state() && vr_view_ptr->get_current_vr_state()->controller[1].status == vr::VRS_TRACKED;
 	if (valid[CS_RIGHT_CONTROLLER])
 		pose[CS_RIGHT_CONTROLLER] = reinterpret_cast<const mat34&>(vr_view_ptr->get_current_vr_state()->controller[1].pose[0]);
 	for (uint32_t li = 0; li < label_coord_systems.size(); ++li) {
