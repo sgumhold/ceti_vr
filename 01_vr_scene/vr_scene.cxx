@@ -81,6 +81,7 @@ void vr_scene::build_scene(float w, float d, float h, float W)
 {
 	construct_room(w, d, h, W, false, false);
 	construct_environment(0.3f, 3 * w, 3 * d, w, d, h);
+	construct_table(table_width, table_depth, table_height, leg_width, leg_offset, table_color, leg_color);
 }
 
 vr_scene::vr_scene()
@@ -93,8 +94,6 @@ vr_scene::vr_scene()
 	scene_file_path = QUOTE_SYMBOL_VALUE(INPUT_DIR) "/../data";
 	on_set(&scene_file_path);
 
-	build_scene(5, 7, 3, 0.2f);
-
 	table_color = rgb(0.3f, 0.2f, 0.0f);
 	table_width = 1.6f;
 	table_depth = 0.8f;
@@ -102,6 +101,8 @@ vr_scene::vr_scene()
 	leg_color = rgb(0.2f, 0.1f, 0.1f);
 	leg_width = 0.04f;
 	leg_offset = 0.0f;
+
+	build_scene(5, 7, 3, 0.2f);
 
 	pixel_scale = 0.001f;
 

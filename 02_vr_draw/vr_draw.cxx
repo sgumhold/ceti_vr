@@ -318,10 +318,10 @@ public:
 			if (draw_mode[ci] == DM_COLORIZE && state_ptr->controller[ci].status == vr::VRS_TRACKED) {
 				P.push_back(compute_lab_draw_position(state_ptr->controller[ci].pose, vec3(0.0f)));
 				R.push_back(0.01f);
-				C.push_back(draw_color[ci]);
+				C.push_back(draw_color[ci]); C.back().alpha() = 0.5f;
 				P.push_back(compute_lab_draw_position(state_ptr->controller[ci].pose, vec3(0.0f, 0.0f, -50*draw_radius[ci])));
 				R.push_back(10*draw_radius[ci]);
-				C.push_back(draw_color[ci]);
+				C.push_back(draw_color[ci]); C.back().alpha() = 0.5f;
 			}
 		if (P.empty())
 			return;
@@ -492,7 +492,7 @@ public:
 			add_member_control(this, "left_draw_radius", draw_radius[0], "value_slider", "min=0.001;max=0.2;step=0.00001;log=true;ticks=true");
 			add_member_control(this, "right_draw_radius", draw_radius[1], "value_slider", "min=0.001;max=0.2;step=0.00001;log=true;ticks=true");
 			add_member_control(this, "left_draw_color", draw_color[0]);
-			add_member_control(this, "right_draw_color", draw_color[0]);
+			add_member_control(this, "right_draw_color", draw_color[1]);
 			add_member_control(this, "draw_distance", draw_distance, "value_slider", "min=0.01;max=0.5;log=true;step=0.00001;ticks=true");
 			add_member_control(this, "creation_threshold", creation_threshold, "value_slider", "min=0.001;max=0.1;log=true;step=0.00001;ticks=true");
 			add_member_control(this, "min_trigger", min_trigger, "value_slider", "min=0.01;max=0.5;log=true;step=0.00001;ticks=true");
