@@ -130,10 +130,14 @@ public:
 	uint32_t add_vertex(const vertex& v) { uint32_t vi = uint32_t(vertices.size()); vertices.push_back(v); ++nr_vertices; return vi; }
 	/// add a new edge
 	uint32_t add_edge(const edge& e) { uint32_t ei = uint32_t(edges.size()); edges.push_back(e); ++nr_edges; return ei; }
+	/// return number of vertices
+	uint32_t get_nr_vertices() const { return (uint32_t)vertices.size(); }
 	/// writable access to vertex
 	vertex& ref_vertex(uint32_t vi) { return vertices[vi]; }
 	/// readonly access to vertex
 	const vertex& get_vertex(uint32_t vi) const { return vertices[vi]; }
+	/// return number of edges
+	uint32_t get_nr_edges() const { return (uint32_t)edges.size(); }
 	/// writable access to edge
 	edge& ref_edge(uint32_t ei) { return edges[ei]; }
 	/// readonly access to edge

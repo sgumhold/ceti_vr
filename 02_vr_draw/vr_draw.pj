@@ -20,7 +20,6 @@ sourceFiles=[
 	INPUT_DIR."/config.def",
 	INPUT_DIR."/vr_tool.h",
 	INPUT_DIR."/vr_draw.cxx",
-	INPUT_DIR."/vr_draw.h",
 	INPUT_DIR."/../01_vr_scene/vr_scene.h",
 	INPUT_DIR."/../01_vr_scene/vr_scene.cxx"
 ];

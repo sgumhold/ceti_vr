@@ -130,7 +130,7 @@ void vr_scene::on_set(void* member_ptr)
 		if (scene_file_names.empty())
 			current_scene_idx = 0;
 		else
-			current_scene_idx = (int)scene_file_names.size();
+			current_scene_idx = (int)scene_file_names.size()-1;
 		on_set(&current_scene_idx);
 	}
 	if (member_ptr == &current_scene_idx) {
@@ -160,7 +160,7 @@ bool vr_scene::init(cgv::render::context& ctx)
 	lm.set_text_color(rgba(0, 0, 0, 1));
 
 	for (int ci = 0; ci < 2; ++ci) {
-		li_help[ci] = add_label("TPAD_Right .. next/new scene\nTPAD_Left  .. prev scene\nTPAD_Down  .. save scene",
+		li_help[ci] = add_label("DPAD_Right .. next/new scene\nDPAD_Left  .. prev scene\nDPAD_Down  .. save scene",
 			rgba(ci == 0 ? 0.8f : 0.4f, 0.4f, ci == 1 ? 0.8f : 0.4f, 1.0f));
 		fix_label_size(li_help[ci]);		
 		place_label(li_help[ci], vec3(ci==0?-0.05f:0.05f, 0.0f, 0.0f), quat(vec3(1, 0, 0), -1.5f), 
