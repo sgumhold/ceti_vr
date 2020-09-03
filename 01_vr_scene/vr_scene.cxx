@@ -343,7 +343,7 @@ void vr_scene::stream_help(std::ostream& os)
 
 bool vr_scene::handle(cgv::gui::event& e)
 {
-	if ((e.get_flags() && cgv::gui::EF_VR) == 0)
+	if ((e.get_flags() & cgv::gui::EF_VR) == 0)
 		return false;
 	if (e.get_kind() != cgv::gui::EID_KEY)
 		return false;

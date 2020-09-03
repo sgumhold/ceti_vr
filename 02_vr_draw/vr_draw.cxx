@@ -358,7 +358,7 @@ public:
 	}
 	bool handle(cgv::gui::event& e)
 	{
-		if ((e.get_flags() && cgv::gui::EF_VR) == 0) {
+		if ((e.get_flags() & cgv::gui::EF_VR) == 0) {
 			if (e.get_kind() != cgv::gui::EID_KEY)
 				return false;
 			auto& ke = static_cast<cgv::gui::key_event&>(e);

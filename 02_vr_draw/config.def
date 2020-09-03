@@ -9,9 +9,9 @@ name(main):gamma=1.0
 //type(vr_emulator):current_kit_index=0
 
 // configure table dimension
-//type(vr_scene):table_width=0.80
-//type(vr_scene):table_depth=0.80
-//type(vr_scene):table_height=1.20
+type(vr_scene):table_width=0.80
+type(vr_scene):table_depth=0.80
+type(vr_scene):table_height=0.72
 
 // read calibration file
 type(vr_view_interactor):calibration_file_path="D:/develop/VIVE_office.cal"
@@ -30,7 +30,7 @@ type(vr_view_interactor):up_dir_z=0.0
 // set mesh file name for hmd
 type(vr_view_interactor):hmd_mesh_file_name="generic_hmd.obj"
 // set scaling factor for hmd mesh to scale it to meter
-type(vr_view_interactor):hmd_scale=1.0
+type(vr_view_interactor):hmd_scale=1.0	
 // set mesh file name for controllers
 type(vr_view_interactor):controller_mesh_file_name="vr_controller_vive_1_5.obj"
 // set scaling factor for controllers
