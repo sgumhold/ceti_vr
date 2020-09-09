@@ -221,7 +221,7 @@ public:
 		drawing[0] = drawing[1] = false;
 		prev[0] = prev_prev[0] = prev_prev_prev[0] = prev[1] = prev_prev[1] = prev_prev_prev[1] = -1;
 	}
-	std::string get_type_name() 
+	std::string get_type_name() const
 	{ 
 		return "vr_draw"; 
 	}
@@ -507,3 +507,6 @@ public:
 
 #include <cgv/base/register.h>
 cgv::base::object_registration<vr_draw> vr_draw_reg("vr_draw");
+#ifdef CGV_FORCE_STATIC
+cgv::base::registration_order_definition ro_def("vr_view_interactor;vr_emulator;vr_scene;vr_draw");
+#endif
