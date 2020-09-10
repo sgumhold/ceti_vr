@@ -1,0 +1,27 @@
+@=
+projectType="application_plugin";
+projectName="sandbox";
+projectGUID="F2F80A02-AA27-4D98-8368-38DE483E820A";
+addProjectDirs=[CGV_DIR."/plugins", CGV_DIR."/libs", CGV_DIR."/test"];
+addIncDirs=[INPUT_DIR, INPUT_DIR."/../01_vr_scene", CGV_DIR."/libs", CGV_DIR."/test"];
+addProjectDeps=[
+	"cgv_utils", "cgv_type", "cgv_data", "cgv_base", "cgv_math", "cgv_media", "cgv_gui", "cgv_render", 
+	"cgv_gl", "cg_vr", "rect_pack",
+	"cgv_gl",
+	"cgv_viewer", 
+	"cg_fltk", "crg_grid", "cg_ext", "cmi_io", "crg_vr_view", 
+	"vr_emulator", "openvr_driver"
+];
+sourceFiles=[
+	CGV_DIR."/libs/cg_nui/label_manager.cxx", 
+	CGV_DIR."/libs/cg_nui/label_manager.h",
+	INPUT_DIR."/config.def",
+	INPUT_DIR."/sandbox.cxx",
+	INPUT_DIR."/../01_vr_scene/vr_scene.h",
+	INPUT_DIR."/../01_vr_scene/vr_scene.cxx"
+];
+addSharedDefines=["CG_SANDBOX_EXPORTS", "CG_NUI_EXPORTS"];
+addCommandLineArguments=[
+	after("type(shader_config):shader_path='".CGV_DIR."/libs/cgv_gl/glsl'","cg_fltk"),
+	'config:"'.INPUT_DIR.'/config.def"'
+];
