@@ -1,4 +1,5 @@
 #include "vr_tool.h"
+#include <cgv/defines/quote.h>
 #include <cgv/base/node.h>
 #include <cgv/render/context.h>
 #include <cgv/render/drawable.h>
@@ -12,14 +13,148 @@
 #include <vr/vr_driver.h>
 #include <cg_vr/vr_events.h>
 #include <vr_view_interactor.h>
+#include <cgv/utils/dir.h>
+#include <cgv/utils/file.h>
+#include <fstream>
 
 class vr_draw : public vr_tool
 {
+public:
+	//@name tube graph for 3d drawing
+	//@{	
+	/// vertex data structure with position, radius and color attributes
+	struct vertex {
+		vec3  position;
+		float radius;
+		rgba  color;
+	};
+	/// edge data structure with indices of two vertices that it connects together
+	struct edge {
+		uint32_t origin_vi;
+		uint32_t target_vi;
+	};
 protected:
-	// render configuration
+	/// graph vertices
+	std::vector<vertex> vertices;
+	/// graph edges
+	std::vector<edge>   edges;
+	// render style for rendering vertices as spheres
 	cgv::render::sphere_render_style srs;
+	/// render style for rendering edges as rounded cones
 	cgv::render::rounded_cone_render_style rcrs;
+public:
+	/// add a new vertex
+	uint32_t add_vertex(const vertex& v) { uint32_t vi = uint32_t(vertices.size()); vertices.push_back(v); ++nr_vertices; return vi; }
+	/// add a new edge
+	uint32_t add_edge(const edge& e) { uint32_t ei = uint32_t(edges.size()); edges.push_back(e); ++nr_edges; return ei; }
+	/// return number of vertices
+	uint32_t get_nr_vertices() const { return (uint32_t)vertices.size(); }
+	/// writable access to vertex
+	vertex& ref_vertex(uint32_t vi) { return vertices[vi]; }
+	/// readonly access to vertex
+	const vertex& get_vertex(uint32_t vi) const { return vertices[vi]; }
+	/// return number of edges
+	uint32_t get_nr_edges() const { return (uint32_t)edges.size(); }
+	/// writable access to edge
+	edge& ref_edge(uint32_t ei) { return edges[ei]; }
+	/// readonly access to edge
+	const edge& get_edge(uint32_t ei) const { return edges[ei]; }
+	//@}
 
+	//@name scene management
+	//@{
+	/// path to be scanned for drawing files
+	std::string draw_file_path;
+	/// vector of drawing file names
+	std::vector<std::string> draw_file_names;
+	/// index of current scene
+	int current_drawing_idx;
+	/// number of vertices in current scene to be shown in UI
+	uint32_t nr_vertices;
+	/// number of edges in current scene to be shown in UI
+	uint32_t nr_edges;
+	/// label index to show statistics
+	uint32_t li_stats;
+	/// labels to show help on controllers
+	uint32_t li_help[2];
+	/// clear the current drawing
+	void clear_drawing()
+	{
+		vertices.clear();
+		edges.clear();
+		nr_vertices = 0;
+		nr_edges = 0;
+		update_member(&nr_vertices);
+		update_member(&nr_edges);
+	}
+	/// generate a new drawing file name
+	std::string get_new_draw_file_name() const
+	{
+		int i = (int)draw_file_names.size() - 1;
+		std::string file_name;
+		do {
+			++i;
+			file_name = "drawing_";
+			std::string s = cgv::utils::to_string(i);
+			while (s.length() < 5)
+				s = std::string("0") + s;
+			file_name += s + ".gph";
+		} while (cgv::utils::file::exists(draw_file_path + "/" + file_name));
+		return file_name;
+	}
+	/// read drawing from file
+	bool read_drawing(const std::string& scene_file_name)
+	{
+		std::ifstream is(scene_file_name);
+		if (is.fail())
+			return false;
+		clear_drawing();
+
+		vertex V;
+		edge E;
+		while (!is.eof()) {
+			char buffer[2048];
+			is.getline(&buffer[0], 2048);
+			std::string line(buffer);
+			if (line.empty())
+				continue;
+			std::stringstream ss(line, std::ios_base::in);
+			char c;
+			ss.get(c);
+			switch (toupper(c)) {
+			case 'V':
+				ss >> V.position >> V.radius >> V.color;
+				if (!ss.fail())
+					vertices.push_back(V);
+				break;
+			case 'E':
+				ss >> E.origin_vi >> E.target_vi;
+				if (!ss.fail())
+					edges.push_back(E);
+				break;
+			}
+		}
+
+		nr_vertices = (uint32_t)vertices.size();
+		nr_edges = (uint32_t)edges.size();
+		update_member(&nr_vertices);
+		update_member(&nr_edges);
+		return !is.fail();
+	}
+	/// write drawing to file
+	bool write_drawing(const std::string& scene_file_name) const
+	{
+		std::ofstream os(scene_file_name);
+		if (os.fail())
+			return false;
+		for (size_t vi = 0; vi < vertices.size(); ++vi)
+			os << "v " << vertices[vi].position << " " << vertices[vi].radius << " " << vertices[vi].color << std::endl;
+		for (size_t ei = 0; ei < edges.size(); ++ei)
+			os << "e " << edges[ei].origin_vi << " " << edges[ei].target_vi << std::endl;
+		return true;
+	}
+	//@}
+protected:
 	/// different drawing modes
 	enum DrawMode {
 		DM_POINT,    // only draw points
@@ -54,7 +189,6 @@ protected:
 		return std::min(length(dp), length(p - l1));
 	}
 private:
-	uint32_t li_help[2];
 	// per controller whether we are drawing 
 	bool   drawing[2];
 	// per controller last used radius
@@ -91,12 +225,12 @@ private:
 
 		// when we start drawing, just add new vertex
 		if (prev[ci] == -1) {			
-			prev[ci] = scene_ptr->add_vertex({ p, radius, draw_color[ci] });
+			prev[ci] = add_vertex({ p, radius, draw_color[ci] });
 			// std::cout << " starting" << std::endl;
 		}
 		else {
 			// otherwise check if we can update prev vertex
-			auto& v_prev = scene_ptr->ref_vertex(prev[ci]);
+			auto& v_prev = ref_vertex(prev[ci]);
 			float dist = length(v_prev.position - p);
 			// first check if new ball encloses previous or previous encloses new ball
 			if (dist + v_prev.radius < radius ||
@@ -111,7 +245,7 @@ private:
 				vec3  p_pred = v_prev.position;
 				float r_pred = v_prev.radius;
 				if (prev_prev[ci] != -1) {
-					const auto& v_prev_prev = scene_ptr->get_vertex(prev_prev[ci]);
+					const auto& v_prev_prev = get_vertex(prev_prev[ci]);
 					// check for direction reversal
 					vec3 d_pred = v_prev.position - v_prev_prev.position;
 					vec3 d = p - v_prev.position;
@@ -120,7 +254,7 @@ private:
 						p_pred = v_prev_prev.position;
 						r_pred = v_prev_prev.radius;
 						if (prev_prev_prev[ci] != -1) {
-							const auto& v_prev_prev_prev = scene_ptr->get_vertex(prev_prev_prev[ci]);
+							const auto& v_prev_prev_prev = get_vertex(prev_prev_prev[ci]);
 							vec3 d_pred = v_prev_prev.position - v_prev_prev_prev.position;
 							float l_pred_sqr = dot(d_pred, d_pred);
 							if (l_pred_sqr > 1e-8f) {
@@ -140,11 +274,11 @@ private:
 
 					prev_prev_prev[ci] = prev_prev[ci];
 					prev_prev[ci] = prev[ci];
-					prev[ci] = scene_ptr->add_vertex({ p, radius, draw_color[ci] });
+					prev[ci] = add_vertex({ p, radius, draw_color[ci] });
 					// std::cout << " new" << std::endl;
 
 					if (draw_mode[ci] == DM_LINE)
-						scene_ptr->add_edge({ uint32_t(prev_prev[ci]), uint32_t(prev[ci]) });
+						add_edge({ uint32_t(prev_prev[ci]), uint32_t(prev[ci]) });
 
 				}
 				else {
@@ -162,9 +296,9 @@ private:
 	{
 		if (!scene_ptr)
 			return;
-		for (uint32_t vi = 0; vi < scene_ptr->get_nr_vertices(); ++vi) {
-			if ((scene_ptr->get_vertex(vi).position - p).length() < radius)
-				scene_ptr->ref_vertex(vi).color = draw_color[ci];
+		for (uint32_t vi = 0; vi < get_nr_vertices(); ++vi) {
+			if ((get_vertex(vi).position - p).length() < radius)
+				ref_vertex(vi).color = draw_color[ci];
 		}
 	}
 	/// helper function called when we start drawing
@@ -205,6 +339,11 @@ private:
 public:
 	vr_draw() : vr_tool("vr_draw")
 	{
+		current_drawing_idx = 0;
+		nr_vertices = 0;
+		nr_edges = 0;
+		draw_file_path = QUOTE_SYMBOL_VALUE(INPUT_DIR) "/../data";
+
 		draw_mode[0] = draw_mode[1] = DM_LINE;
 		in_color_selection[0] = in_color_selection[1] = false;
 		in_radius_adjustment[0] = in_radius_adjustment[1] = false;
@@ -220,6 +359,8 @@ public:
 
 		drawing[0] = drawing[1] = false;
 		prev[0] = prev_prev[0] = prev_prev_prev[0] = prev[1] = prev_prev[1] = prev_prev_prev[1] = -1;
+
+		on_set(&draw_file_path);
 	}
 	std::string get_type_name() const
 	{ 
@@ -227,6 +368,26 @@ public:
 	}
 	void on_set(void* member_ptr)
 	{
+		if (member_ptr == &draw_file_path) {
+			cgv::utils::dir::glob(draw_file_path, draw_file_names, "drawing_*.gph", false, true);
+			if (draw_file_names.empty())
+				current_drawing_idx = 0;
+			else
+				current_drawing_idx = (int)draw_file_names.size() - 1;
+			on_set(&current_drawing_idx);
+		}
+		if (member_ptr == &current_drawing_idx) {
+			if (current_drawing_idx < (int)draw_file_names.size())
+				read_drawing(draw_file_path + "/" + draw_file_names[current_drawing_idx]);
+		}
+		if (scene_ptr && member_ptr == &current_drawing_idx || member_ptr == &nr_vertices || member_ptr == &nr_edges) {
+			std::stringstream ss;
+			ss << "drawing index: " << current_drawing_idx << "\n"
+				<< "nr vertices:  " << nr_vertices << "\n"
+				<< "nr edges:     " << nr_edges;
+			ss.flush();
+			scene_ptr->update_label_text(li_stats, ss.str());
+		}
 		update_member(member_ptr);
 		post_redraw();
 	}
@@ -239,15 +400,39 @@ public:
 	void init_frame(cgv::render::context& ctx)
 	{
 		vr_tool::init_frame(ctx);
-		if (scene_ptr && li_help[0] == -1) {
-			for (int ci = 0; ci < 2; ++ci) {
-				li_help[ci] = scene_ptr->add_label("DPAD_Up .. toggle draw mode\nTPAD_Touch&Up/Dn .. change radius\nTPAD_Touch&Move .. change color\ncolorize (0.000)\nRGB(0.00,0.00,0.00)\nHLS(0.00,0.00,0.00)",
-					rgba(ci == 0 ? 0.8f : 0.4f, 0.4f, ci == 1 ? 0.8f : 0.4f, 1.0f));
-				scene_ptr->fix_label_size(li_help[ci]);
-				scene_ptr->place_label(li_help[ci], vec3(ci == 1 ? -0.05f : 0.05f, 0.0f, 0.0f), quat(vec3(1, 0, 0), -1.5f),
-					ci == 0 ? vr_scene::CS_LEFT_CONTROLLER : vr_scene::CS_RIGHT_CONTROLLER, ci == 1 ? vr_scene::LA_RIGHT : vr_scene::LA_LEFT, 0.2f);
-				scene_ptr->hide_label(li_help[ci]);
+		
+		if (scene_ptr) {
+			if (li_help[0] == -1) {
+				li_stats = scene_ptr->add_label(
+					"drawing index: 000000\n"
+					"nr vertices:   000000\n"
+					"nr edges:      000000", rgba(0.8f, 0.6f, 0.0f, 1.0f));
+				scene_ptr->fix_label_size(li_stats);
+				scene_ptr->place_label(li_stats, vec3(0.0f, 0.01f, 0.0f), quat(vec3(1, 0, 0), -1.5f), vr_scene::CS_TABLE);
+				for (int ci = 0; ci < 2; ++ci) {
+					li_help[ci] = scene_ptr->add_label("DPAD_Right .. next/new drawing\nDPAD_Left  .. prev drawing\nDPAD_Down  .. save drawing\nDPAD_Up .. toggle draw mode\nTPAD_Touch&Up/Dn .. change radius\nTPAD_Touch&Move .. change color\ncolorize (0.000)\nRGB(0.00,0.00,0.00)\nHLS(0.00,0.00,0.00)",
+						rgba(ci == 0 ? 0.8f : 0.4f, 0.4f, ci == 1 ? 0.8f : 0.4f, 1.0f));
+					scene_ptr->fix_label_size(li_help[ci]);
+					scene_ptr->place_label(li_help[ci], vec3(ci == 1 ? -0.05f : 0.05f, 0.0f, 0.0f), quat(vec3(1, 0, 0), -1.5f),
+						ci == 0 ? vr_scene::CS_LEFT_CONTROLLER : vr_scene::CS_RIGHT_CONTROLLER, ci == 1 ? vr_scene::LA_RIGHT : vr_scene::LA_LEFT, 0.2f);
+					scene_ptr->hide_label(li_help[ci]);
+				}
 			}
+			// update visibility of visibility changing labels
+			if (scene_ptr && vr_view_ptr && vr_view_ptr->get_current_vr_state()) {
+				vec3 view_dir = -reinterpret_cast<const vec3&>(vr_view_ptr->get_current_vr_state()->hmd.pose[6]);
+				vec3 view_pos = reinterpret_cast<const vec3&>(vr_view_ptr->get_current_vr_state()->hmd.pose[9]);
+				for (int ci = 0; ci < 2; ++ci) {
+					vec3 controller_pos = reinterpret_cast<const vec3&>(vr_view_ptr->get_current_vr_state()->controller[ci].pose[9]);
+					float controller_depth = dot(view_dir, controller_pos - view_pos);
+					float controller_dist = (view_pos + controller_depth * view_dir - controller_pos).length();
+					if (view_dir.y() < -0.5f && controller_depth / controller_dist > 5.0f)
+						scene_ptr->show_label(li_help[ci]);
+					else
+						scene_ptr->hide_label(li_help[ci]);
+				}
+			}
+
 		}
 		static const char* draw_mode_str[] = { "point","line","colorize" };
 		for (int ci = 0; ci < 2; ++ci) {
@@ -256,7 +441,7 @@ public:
 			// update help text
 			cgv::media::color<float, cgv::media::HLS> hls = draw_color[ci];
 			std::stringstream ss;
-			ss << "DPAD_Up .. toggle draw mode\nTPAD_Touch&Up/Dn .. change radius\nTPAD_Touch&Move .. change color\n"
+			ss << "DPAD_Right .. next/new drawing\nDPAD_Left  .. prev drawing\nDPAD_Down  .. save drawing\nDPAD_Up .. toggle draw mode\nTPAD_Touch&Up/Dn .. change radius\nTPAD_Touch&Move .. change color\n"
 				<< draw_mode_str[draw_mode[ci]] << " (" << std::setw(4) << std::setprecision(2) << draw_radius[ci] << ")"
 				<< "\nRGB(" << std::setw(4) << std::setprecision(2) << draw_color[ci][0] << "," << std::setw(4) << std::setprecision(2) << draw_color[ci][1] << "," << std::setw(4) << std::setprecision(2) << draw_color[ci][2] << ")"
 				<< "\nHLS(" << std::setw(4) << std::setprecision(2) << hls[0] << "," << std::setw(4) << std::setprecision(2) << hls[1] << "," << std::setw(4) << std::setprecision(2) << hls[2] << ")";
@@ -283,6 +468,24 @@ public:
 		if (!state_ptr)
 			return;
 
+		auto& sr = cgv::render::ref_sphere_renderer(ctx);
+		sr.set_render_style(srs);
+		auto& rcr = cgv::render::ref_rounded_cone_renderer(ctx);
+		rcr.set_render_style(rcrs);
+		// draw vertex edge graph
+		if (!vertices.empty()) {
+			sr.set_position_array(ctx, &vertices.front().position, vertices.size(), sizeof(vertex));
+			sr.set_radius_array(ctx, &vertices.front().radius, vertices.size(), sizeof(vertex));
+			sr.set_color_array(ctx, &vertices.front().color, vertices.size(), sizeof(vertex));
+			sr.render(ctx, 0, (GLsizei)vertices.size());
+		}
+		if (!edges.empty()) {
+			rcr.set_position_array(ctx, &vertices.front().position, vertices.size(), sizeof(vertex));
+			rcr.set_radius_array(ctx, &vertices.front().radius, vertices.size(), sizeof(vertex));
+			rcr.set_color_array(ctx, &vertices.front().color, vertices.size(), sizeof(vertex));
+			rcr.set_indices(ctx, &edges.front().origin_vi, 2 * edges.size());
+			rcr.render(ctx, 0, (GLsizei)(2 * edges.size()));
+		}
 		// draw spheres that represent the pen
 		std::vector<vec3> P;
 		std::vector<float> R;
@@ -294,8 +497,6 @@ public:
 				C.push_back(draw_color[ci]);
 			}
 		if (!P.empty()) {
-			auto& sr = cgv::render::ref_sphere_renderer(ctx);
-			sr.set_render_style(srs);
 			sr.set_position_array(ctx, P);
 			sr.set_radius_array(ctx, R);
 			sr.set_color_array(ctx, C);
@@ -354,7 +555,7 @@ public:
 	}
 	void stream_help(std::ostream& os)
 	{
-		os << "vr_draw: select draw <M>ode, press vr pad to draw" << std::endl;
+		os << "vr_draw: select draw <M>ode, press vr pad or trigger to draw, grip to change color" << std::endl;
 	}
 	bool handle(cgv::gui::event& e)
 	{
@@ -382,6 +583,35 @@ public:
 			auto& vrke = static_cast<cgv::gui::vr_key_event&>(e);
 			int ci = vrke.get_controller_index();
 			switch (vrke.get_key()) {
+			case vr::VR_DPAD_RIGHT:
+				if (vertices.empty())
+					return false;
+				if (current_drawing_idx >= (int)draw_file_names.size())
+					draw_file_names.push_back(get_new_draw_file_name());
+				if (vertices.size() > 0)
+					write_drawing(draw_file_path + "/" + draw_file_names[current_drawing_idx]);
+				++current_drawing_idx;
+				if (current_drawing_idx >= (int)draw_file_names.size())
+					clear_drawing();
+				else
+					read_drawing(draw_file_path + "/" + draw_file_names[current_drawing_idx]);
+				return true;
+			case vr::VR_DPAD_LEFT:
+				if (current_drawing_idx > 0) {
+					if (vertices.size() > 0) {
+						if (current_drawing_idx >= (int)draw_file_names.size())
+							draw_file_names.push_back(get_new_draw_file_name());
+						write_drawing(draw_file_path + "/" + draw_file_names[current_drawing_idx]);
+					}
+					--current_drawing_idx;
+					read_drawing(draw_file_path + "/" + draw_file_names[current_drawing_idx]);
+				}
+				return true;
+			case vr::VR_DPAD_DOWN:
+				if (current_drawing_idx >= (int)draw_file_names.size())
+					draw_file_names.push_back(get_new_draw_file_name());
+				write_drawing(draw_file_path + "/" + draw_file_names[current_drawing_idx]);
+				return true;
 			case vr::VR_DPAD_UP:
 				if (vrke.get_action() == cgv::gui::KA_PRESS) {
 					draw_mode[ci] = draw_mode[ci] == DM_COLORIZE ? DM_POINT : DrawMode(draw_mode[ci] + 1);
@@ -468,6 +698,27 @@ public:
 	void create_gui()
 	{
 		add_decorator("vr_draw", "heading");
+		add_view("nr_vertices", nr_vertices);
+		add_view("nr_edges", nr_edges);
+		add_member_control(this, "draw_file_path", draw_file_path, "directory");
+		//		"open=true;open_title='open scene file';filter='scene (scn):*.scn|all files:*.*';"
+		//"save=true;save_title='save scene file';w=140");
+		if (begin_tree_node("interaction", draw_mode)) {
+			align("\a");
+			add_member_control(this, "left_draw_mode", draw_mode[0], "dropdown", "enums='point,line,colorize'");
+			add_member_control(this, "right_draw_mode", draw_mode[1], "dropdown", "enums='point,line,colorize'");
+			add_member_control(this, "left_draw_radius", draw_radius[0], "value_slider", "min=0.001;max=0.2;step=0.00001;log=true;ticks=true");
+			add_member_control(this, "right_draw_radius", draw_radius[1], "value_slider", "min=0.001;max=0.2;step=0.00001;log=true;ticks=true");
+			add_member_control(this, "left_draw_color", draw_color[0]);
+			add_member_control(this, "right_draw_color", draw_color[1]);
+			add_member_control(this, "draw_distance", draw_distance, "value_slider", "min=0.01;max=0.5;log=true;step=0.00001;ticks=true");
+			add_member_control(this, "creation_threshold", creation_threshold, "value_slider", "min=0.001;max=0.1;log=true;step=0.00001;ticks=true");
+			add_member_control(this, "min_trigger", min_trigger, "value_slider", "min=0.01;max=0.5;log=true;step=0.00001;ticks=true");
+			add_member_control(this, "min_radius", min_radius, "value_slider", "min=0.001;max=0.1;log=true;step=0.00001;ticks=true");
+			add_member_control(this, "max_radius", max_radius, "value_slider", "min=0.1;max=2;log=true;step=0.00001;ticks=true");
+			align("\b");
+			end_tree_node(srs);
+		}
 		if (begin_tree_node("rendering", srs.material)) {
 			align("\a");
 			if (begin_tree_node("spheres", srs)) {
@@ -484,22 +735,6 @@ public:
 			}
 			align("\b");
 			end_tree_node(srs.material);
-		}
-		if (begin_tree_node("interaction", draw_mode)) {
-			align("\a");
-			add_member_control(this, "left_draw_mode", draw_mode[0], "dropdown", "enums='point,line,colorize'");
-			add_member_control(this, "right_draw_mode", draw_mode[1], "dropdown", "enums='point,line,colorize'");
-			add_member_control(this, "left_draw_radius", draw_radius[0], "value_slider", "min=0.001;max=0.2;step=0.00001;log=true;ticks=true");
-			add_member_control(this, "right_draw_radius", draw_radius[1], "value_slider", "min=0.001;max=0.2;step=0.00001;log=true;ticks=true");
-			add_member_control(this, "left_draw_color", draw_color[0]);
-			add_member_control(this, "right_draw_color", draw_color[1]);
-			add_member_control(this, "draw_distance", draw_distance, "value_slider", "min=0.01;max=0.5;log=true;step=0.00001;ticks=true");
-			add_member_control(this, "creation_threshold", creation_threshold, "value_slider", "min=0.001;max=0.1;log=true;step=0.00001;ticks=true");
-			add_member_control(this, "min_trigger", min_trigger, "value_slider", "min=0.01;max=0.5;log=true;step=0.00001;ticks=true");
-			add_member_control(this, "min_radius", min_radius, "value_slider", "min=0.001;max=0.1;log=true;step=0.00001;ticks=true");
-			add_member_control(this, "max_radius", max_radius, "value_slider", "min=0.1;max=2;log=true;step=0.00001;ticks=true");
-			align("\b");
-			end_tree_node(srs);
 		}
 	}
 };

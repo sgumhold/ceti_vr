@@ -165,7 +165,7 @@ public:
 public:
 	mesh_view() : node("mesh_view")
 	{
-		conway_notation = "tT";
+		conway_notation = "aaC";
 		click_is_pick = false;
 		in_picking = false;
 		click_press_time = 0;
@@ -200,7 +200,7 @@ public:
 		rotation_angles = vec3(0.0f);
 		scale_factor = 0.2f;
 
-		surface_type = ST_ROMAN_BOY;
+		surface_type = ST_CONWAY;
 		a = 1;
 		b = 0.2f;
 		lb = 0.01f;
@@ -285,6 +285,119 @@ public:
 	{
 		return normalize(cross(p1 - p0, p2 - p0));
 	}
+
+	void truncate(mesh_type& M)
+	{
+
+	}
+	void extend_mesh(const mesh_type& M, 
+		std::vector<uint32_t>& next, std::vector<uint32_t>& inv, std::vector<uint32_t>& p2c, 
+		std::vector<uint32_t>& c2e, std::vector<uint32_t>& e2c)
+	{
+		uint32_t fi, e = 0;
+		
+		p2c.resize(M.get_nr_positions());
+		next.resize(M.get_nr_corners());
+		inv.resize(M.get_nr_corners());
+		std::map<std::pair<uint32_t, uint32_t>, uint32_t> pipj2ci;
+		for (fi = 0; fi < M.get_nr_faces(); ++fi) {
+			for (uint32_t ci = M.begin_corner(fi); ci < M.end_corner(fi); ++ci) {
+				uint32_t pi = M.c2p(ci);
+				p2c[pi] = ci;
+				uint32_t cj = ci + 1 == M.end_corner(fi) ? M.begin_corner(fi) : ci + 1;
+				uint32_t pj = M.c2p(cj);
+				next[ci] = cj;
+				std::pair<uint32_t, uint32_t> pipj(std::min(pi,pj), std::max(pi,pj));
+				if (pipj2ci.find(pipj) == pipj2ci.end())
+					pipj2ci[pipj] = ci;
+				else {
+					uint32_t inv_ci = pipj2ci[pipj];
+					inv[ci] = inv_ci;
+					inv[inv_ci] = ci;
+					pipj2ci.erase(pipj2ci.find(pipj));
+				}
+			}
+		}
+		c2e.resize(M.get_nr_corners(), -1);
+		e2c.resize(M.get_nr_corners() / 2);
+		for (fi = 0; fi < M.get_nr_faces(); ++fi) {
+			for (uint32_t ci = M.begin_corner(fi); ci < M.end_corner(fi); ++ci) {
+				if (c2e[ci] == -1) {
+					c2e[ci] = c2e[inv[ci]] = e;
+					e2c[e] = ci;
+					++e;
+				}
+			}
+		}
+	}
+	void ambo(mesh_type& M)
+	{
+		std::vector<uint32_t> c2e;
+		std::vector<uint32_t> e2c;
+		std::vector<uint32_t> inv;
+		std::vector<uint32_t> next;
+		std::vector<uint32_t> p2c;
+		extend_mesh(M, next, inv, p2c, c2e, e2c);
+		uint32_t e = e2c.size();
+		mesh_type new_M;
+		// create one vertex per edge
+		for (uint32_t ei = 0; ei < e; ++ei) {
+			uint32_t pi = M.c2p(e2c[ei]);
+			uint32_t pj = M.c2p(inv[e2c[ei]]);
+			new_M.new_position(normalize(M.position(pi) + M.position(pj)));
+		}
+		// create one face for original faces
+		for (uint32_t fi = 0; fi < M.get_nr_faces(); ++fi) {
+			uint32_t new_fi = new_M.start_face();
+			for (uint32_t ci = M.begin_corner(fi); ci < M.end_corner(fi); ++ci)
+				new_M.new_corner(c2e[ci], new_fi);
+		}
+		// create one face for original vertices
+		for (uint32_t pi = 0; pi < M.get_nr_positions(); ++pi) {
+			uint32_t c0 = p2c[pi];
+			uint32_t ci = c0;
+			uint32_t new_fi = new_M.start_face();
+			do {
+				new_M.new_corner(c2e[ci], new_fi);
+				ci = inv[ci];
+				ci = next[ci];
+			} while (ci != c0);
+		}
+		// compute per face normals
+		for (uint32_t new_fi = 0; new_fi < new_M.get_nr_faces(); ++new_fi) {
+			std::vector<vec3> P;
+			vec3 ctr = vec3(0.0f);
+			uint32_t nr = 0;
+			for (uint32_t ci = new_M.begin_corner(new_fi); ci < new_M.end_corner(new_fi); ++ci) {
+				P.push_back(new_M.position(new_M.c2p(ci)));
+				ctr += P.back();
+				++nr;
+			}
+			ctr /= float(nr);
+			vec3 prev_p = P.back() - ctr;
+			vec3 nml = vec3(0.0f);
+			for (uint32_t i = 0; i < P.size(); ++i) {
+				vec3 p = P[i] - ctr;
+				nml += cross(prev_p, p);
+				prev_p = p;
+			}
+			nml.normalize();
+			new_M.new_normal(nml);
+		}
+		M = new_M;
+	}
+	void dual(mesh_type& M)
+	{
+
+	}
+	void join(mesh_type& M)
+	{
+
+	}
+	void ortho(mesh_type& M)
+	{
+
+	}
 	void generate_conway_polyhedron(mesh_type& M, const std::string& conway_notation)
 	{
 		if (conway_notation.back() == 'C') {
@@ -314,6 +427,15 @@ public:
 				M.new_normal(compute_normal(M.position(F[3 * fi]), M.position(F[3 * fi + 1]), M.position(F[3 * fi + 2])));
 				for (int ci = 0; ci < 3; ++ci)
 					M.new_corner(F[3 * fi + ci], fi);
+			}
+		}
+		for (int ci = (int)conway_notation.size() - 1; ci >= 0; --ci) {
+			switch (conway_notation[ci]) {
+			case 't': truncate(M); break;
+			case 'a': ambo(M); break;
+			case 'd': dual(M); break;
+			case 'j': join(M); break;
+			case 'o': ortho(M); break;
 			}
 		}
 	}
@@ -410,7 +532,7 @@ public:
 	}
 	void on_set(void* member_ptr)
 	{
-		if (auto_gen && member_ptr >= &surface_type && member_ptr < &auto_gen) {
+		if (auto_gen && ((member_ptr >= &surface_type && member_ptr < &auto_gen) || (surface_type == ST_CONWAY && member_ptr == &conway_notation))) {
 			generate_surface();
 		}
 		if (member_ptr == &file_name) {
