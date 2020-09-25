@@ -111,6 +111,7 @@ public:
 	float a, b;
 	float lb, ub;
 	float alpha;
+	float scale;
 	bool auto_gen;
 	bool auto_view;
 
@@ -165,13 +166,14 @@ public:
 public:
 	mesh_view() : node("mesh_view")
 	{
-		conway_notation = "gC";
+		conway_notation = "ggtdsatdtD";
 		click_is_pick = false;
 		in_picking = false;
 		click_press_time = 0;
 		click_button = 0;
 		pick_point_index = -1;
 		view_ptr = 0;
+		scale = 1.0f;
 		show_surface = true;
 		cull_mode = CM_OFF;
 		color_mapping = cgv::render::CM_COLOR;
@@ -198,7 +200,7 @@ public:
 
 		translate_vector = vec3(0.0f, 1.5f, 0.0f);
 		rotation_angles = vec3(0.0f);
-		scale_factor = 0.2f;
+		scale_factor = 1;
 
 		surface_type = ST_CONWAY;
 		a = 1;
@@ -318,6 +320,9 @@ public:
 			// compute surface normals at mesh vertices from quads
 			M.compute_vertex_normals();
 		}
+		mat3 S(0.0f);
+		S(0, 0) = S(1, 1) = S(2, 2) = scale;
+		M.transform(S, vec3(0.0f));
 
 		have_new_mesh = true;
 		post_redraw();
@@ -806,6 +811,7 @@ public:
 		if (show) {
 			align("\a");
 			add_member_control(this, "type", surface_type, "dropdown", "enums='cylinder,sphere,dini,roman,roman boy,Conway'");
+			add_member_control(this, "scale", scale, "value_slider", "min=0.01;max=100;ticks=true;log=true");
 			add_member_control(this, "conway notation", conway_notation);
 			add_member_control(this, "auto_view", auto_view, "toggle");
 			add_member_control(this, "auto_gen", auto_gen, "toggle");

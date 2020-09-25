@@ -1,0 +1,19 @@
+@=
+projectType="application_plugin";
+projectName="rigid_body_test";
+projectGUID="CCA02C59-352E-451C-A9E5-E1A87B720AD3";
+addProjectDirs=[INPUT_DIR."/../rigid_body", CGV_DIR."/libs", CGV_DIR."/plugins", CGV_DIR."/3rd"];
+addIncDirs=[CGV_DIR."/libs", INPUT_DIR, INPUT_DIR."/../rigid_body"];
+addProjectDeps=[
+	"cgv_utils", "cgv_type", "cgv_reflect", "cgv_data", "cgv_signal", "cgv_base", "cgv_media", "cgv_gui", "cgv_render", "cgv_os",
+	"cgv_reflect_types", "cgv_gl", "plot", "glew",
+	"cg_fltk", "crg_stereo_view", "crg_light", "crg_grid", "cg_icons", "rigid_body",
+	"cgv_viewer"
+];
+
+addSharedDefines=["RIGID_BODY_TEST_EXPORTS"];
+
+addCommandLineArguments=[
+	'"config:'.INPUT_DIR.'/config.def"',
+	after("type(shader_config):shader_path='".INPUT_DIR."/glsl;".CGV_DIR."/libs/plot/glsl;".CGV_DIR."/libs/cgv_gl/glsl'","cg_fltk")
+];
