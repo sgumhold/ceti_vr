@@ -13,6 +13,9 @@ type(vr_scene):table_width=0.80
 type(vr_scene):table_depth=0.80
 type(vr_scene):table_height=0.72
 
+// configure the path whether the drawings should be stored
+//type(vr_draw):draw_file_path="D:/develop/projects/git/ceti_vr/02_vr_draw"
+
 // read calibration file
 type(vr_view_interactor):calibration_file_path="D:/develop/VIVE_office.cal"
 

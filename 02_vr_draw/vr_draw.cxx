@@ -87,6 +87,14 @@ public:
 		update_member(&nr_vertices);
 		update_member(&nr_edges);
 	}
+	std::string get_type_name() const
+	{
+		return "vr_draw";
+	}
+	bool self_reflect(cgv::reflect::reflection_handler& rh)
+	{
+		return rh.reflect_member("draw_file_path", draw_file_path);
+	}
 	/// generate a new drawing file name
 	std::string get_new_draw_file_name() const
 	{
@@ -361,10 +369,6 @@ public:
 		prev[0] = prev_prev[0] = prev_prev_prev[0] = prev[1] = prev_prev[1] = prev_prev_prev[1] = -1;
 
 		on_set(&draw_file_path);
-	}
-	std::string get_type_name() const
-	{ 
-		return "vr_draw"; 
 	}
 	void on_set(void* member_ptr)
 	{
