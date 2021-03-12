@@ -3,6 +3,7 @@
 #include <cgv/base/node.h>
 #include <cgv/render/context.h>
 #include <cgv/render/drawable.h>
+#include <cgv/media/color_scale.h>
 #include <cgv/render/shader_program.h>
 #include <cgv_gl/gl/mesh_render_info.h>
 #include <cgv_gl/sphere_renderer.h>
@@ -75,8 +76,6 @@ public:
 	uint32_t nr_edges;
 	/// label index to show statistics
 	uint32_t li_stats;
-	/// labels to show help on controllers
-	uint32_t li_help[2];
 	/// clear the current drawing
 	void clear_drawing()
 	{
@@ -169,15 +168,46 @@ protected:
 		DM_LINE,     // draw points connected with lines
 		DM_COLORIZE  // change color of points
 	};
-	DrawMode draw_mode[2];
-	/// per controller radius used to draw with touch pad center
-	float draw_radius[2];
-	/// per controller a draw color
-	rgb   draw_color[2];
-	/// members used for color adjustment
-	bool in_color_selection[2];
-	vec3 color_selection_ref[2];
-	rgb last_color[2];
+	/// information stored per controller
+	struct controller_info
+	{
+		/// labels to show help on controllers
+		uint32_t li_help;
+		///
+		DrawMode draw_mode;
+		/// per controller radius used to draw with touch pad center
+		float draw_radius;
+		/// per controller a draw color
+		rgb   draw_color;
+		/// members used for color adjustment
+		bool in_color_selection;
+		vec3 color_selection_ref;
+		rgb last_color;
+		// per controller whether we are drawing 
+		bool   drawing;
+		// per controller last used radius
+		float  last_radius;
+		// per controller cache of previously drawn vertices
+		int32_t prev;
+		int32_t prev_prev;
+		int32_t prev_prev_prev;
+		bool in_radius_adjustment;
+		float initial_radius;
+		float initial_y;
+		controller_info(int ci)
+		{
+			li_help = -1;
+			draw_mode = DM_LINE;
+			in_color_selection = false;
+			in_radius_adjustment = false;
+			draw_radius = 0.01f;
+			draw_color = cgv::media::color_scale(0.125*ci, cgv::media::CS_HUE);
+			drawing = false;
+			prev = prev_prev = prev_prev_prev = -1;
+		}
+	};
+	/// store per controller info
+	controller_info ctrl_infos[8];
 	/// distance of drawing point from controller origin
 	float draw_distance;
 	/// threshold for new vertex creation in measured in meters
@@ -196,20 +226,6 @@ protected:
 			return length(dp + lambda * dl);
 		return std::min(length(dp), length(p - l1));
 	}
-private:
-	// per controller whether we are drawing 
-	bool   drawing[2];
-	// per controller last used radius
-	float  last_radius[2];
-	// per controller cache of previously drawn vertices
-	int32_t prev[2];
-	int32_t prev_prev[2];
-	int32_t prev_prev_prev[2];
-	
-	bool in_radius_adjustment[2];
-	float initial_radius[2];
-	float initial_y[2];
-
 	/// transform point with pose to lab coordinate system 
 	vec3 compute_lab_draw_position(const float* pose, const vec3& p)
 	{
@@ -226,19 +242,20 @@ private:
 		if (!scene_ptr)
 			return;
 		// manage radius
+		controller_info& CI = ctrl_infos[ci];
 		if (radius == -1.0f)
-			radius = last_radius[ci];
+			radius = CI.last_radius;
 		else
-			last_radius[ci] = radius;
+			CI.last_radius = radius;
 
 		// when we start drawing, just add new vertex
-		if (prev[ci] == -1) {			
-			prev[ci] = add_vertex({ p, radius, draw_color[ci] });
+		if (CI.prev == -1) {			
+			CI.prev = add_vertex({ p, radius, CI.draw_color });
 			// std::cout << " starting" << std::endl;
 		}
 		else {
 			// otherwise check if we can update prev vertex
-			auto& v_prev = ref_vertex(prev[ci]);
+			auto& v_prev = ref_vertex(CI.prev);
 			float dist = length(v_prev.position - p);
 			// first check if new ball encloses previous or previous encloses new ball
 			if (dist + v_prev.radius < radius ||
@@ -252,8 +269,8 @@ private:
 				bool no_update = true;
 				vec3  p_pred = v_prev.position;
 				float r_pred = v_prev.radius;
-				if (prev_prev[ci] != -1) {
-					const auto& v_prev_prev = get_vertex(prev_prev[ci]);
+				if (CI.prev_prev != -1) {
+					const auto& v_prev_prev = get_vertex(CI.prev_prev);
 					// check for direction reversal
 					vec3 d_pred = v_prev.position - v_prev_prev.position;
 					vec3 d = p - v_prev.position;
@@ -261,8 +278,8 @@ private:
 						no_update = false;
 						p_pred = v_prev_prev.position;
 						r_pred = v_prev_prev.radius;
-						if (prev_prev_prev[ci] != -1) {
-							const auto& v_prev_prev_prev = get_vertex(prev_prev_prev[ci]);
+						if (CI.prev_prev_prev != -1) {
+							const auto& v_prev_prev_prev = get_vertex(CI.prev_prev_prev);
 							vec3 d_pred = v_prev_prev.position - v_prev_prev_prev.position;
 							float l_pred_sqr = dot(d_pred, d_pred);
 							if (l_pred_sqr > 1e-8f) {
@@ -280,13 +297,13 @@ private:
 				if (length(p - p_pred) > creation_threshold ||
 					abs(radius - r_pred) > creation_threshold) {
 
-					prev_prev_prev[ci] = prev_prev[ci];
-					prev_prev[ci] = prev[ci];
-					prev[ci] = add_vertex({ p, radius, draw_color[ci] });
+					CI.prev_prev_prev= CI.prev_prev;
+					CI.prev_prev= CI.prev;
+					CI.prev= add_vertex({ p, radius, CI.draw_color });
 					// std::cout << " new" << std::endl;
 
-					if (draw_mode[ci] == DM_LINE)
-						add_edge({ uint32_t(prev_prev[ci]), uint32_t(prev[ci]) });
+					if (CI.draw_mode == DM_LINE)
+						add_edge({ uint32_t(CI.prev_prev), uint32_t(CI.prev) });
 
 				}
 				else {
@@ -304,75 +321,70 @@ private:
 	{
 		if (!scene_ptr)
 			return;
+		controller_info& CI = ctrl_infos[ci];
 		for (uint32_t vi = 0; vi < get_nr_vertices(); ++vi) {
 			if ((get_vertex(vi).position - p).length() < radius)
-				ref_vertex(vi).color = draw_color[ci];
+				ref_vertex(vi).color = CI.draw_color;
 		}
 	}
 	/// helper function called when we start drawing
 	void start_drawing(int ci, const vr::vr_kit_state& state, double time, float radius = -1.0f)
 	{
-		drawing[ci] = true;
-		if (draw_mode[ci] != DM_COLORIZE) {
+		controller_info& CI = ctrl_infos[ci];
+		CI.drawing= true;
+		if (CI.draw_mode != DM_COLORIZE) {
 			vec3 p = compute_lab_draw_position(state.controller[ci].pose);
 			consider_vertex(ci, p, time, radius);
 		}
 		else {
-			vec3 p = compute_lab_draw_position(state.controller[ci].pose, vec3(0,0,-50*draw_radius[ci]));
-			colorize_vertex(ci, p, 10*draw_radius[ci]);
+			vec3 p = compute_lab_draw_position(state.controller[ci].pose, vec3(0,0,-50*CI.draw_radius));
+			colorize_vertex(ci, p, 10*CI.draw_radius);
 		}
 	}
 	/// helper function called when we continue drawing
 	void continue_drawing(int ci, const vr::vr_kit_state& state, double time, float radius = -1.0f)
 	{
-		if (draw_mode[ci] != DM_COLORIZE) {
+		controller_info& CI = ctrl_infos[ci];
+		if (CI.draw_mode!= DM_COLORIZE) {
 			vec3 p = compute_lab_draw_position(state.controller[ci].pose);
 			consider_vertex(ci, p, time, radius);
 		}
 		else {
-			vec3 p = compute_lab_draw_position(state.controller[ci].pose, vec3(0, 0, -50 * draw_radius[ci]));
-			colorize_vertex(ci, p, 10*draw_radius[ci]);
+			vec3 p = compute_lab_draw_position(state.controller[ci].pose, vec3(0, 0, -50 * CI.draw_radius));
+			colorize_vertex(ci, p, 10*CI.draw_radius);
 		}
 	}
 	/// helper function called when we stop drawing
 	void stop_drawing(int ci, const vr::vr_kit_state& state, double time, float radius = -1.0f)
 	{
-		if (draw_mode[ci] != DM_COLORIZE) {
+		controller_info& CI = ctrl_infos[ci];
+		if (CI.draw_mode!= DM_COLORIZE) {
 			vec3 p = compute_lab_draw_position(state.controller[ci].pose);
 			consider_vertex(ci, p, time, radius);
-			prev[ci] = prev_prev[ci] = prev_prev_prev[ci] = -1;
+			CI.prev= CI.prev_prev = CI.prev_prev_prev= -1;
 		}
-		drawing[ci] = false;
+		CI.drawing= false;
 	}
 public:
-	vr_draw() : vr_tool("vr_draw")
+	vr_draw() : vr_tool("vr_draw"), ctrl_infos{0,1,2,3,4,5,6,7}
 	{
 		current_drawing_idx = 0;
 		nr_vertices = 0;
 		nr_edges = 0;
 		draw_file_path = QUOTE_SYMBOL_VALUE(INPUT_DIR) "/../data";
 
-		draw_mode[0] = draw_mode[1] = DM_LINE;
-		in_color_selection[0] = in_color_selection[1] = false;
-		in_radius_adjustment[0] = in_radius_adjustment[1] = false;
-		draw_radius[0] = draw_radius[1] = 0.01f;
-		draw_color[0] = rgb(1.0f, 0.3f, 0.7f);
-		draw_color[1] = rgb(0.7f, 0.3f, 1.0f);
-		draw_distance = 0.1f;
+		draw_distance = 0.2f;
 		creation_threshold = 0.002f;
 		min_trigger = 0.03f;
 		min_radius = 0.001f;
 		max_radius = 0.03f;
-		li_help[0] = li_help[1] = -1;
-
-		drawing[0] = drawing[1] = false;
-		prev[0] = prev_prev[0] = prev_prev_prev[0] = prev[1] = prev_prev[1] = prev_prev_prev[1] = -1;
 
 		on_set(&draw_file_path);
 	}
 	void on_set(void* member_ptr)
 	{
 		if (member_ptr == &draw_file_path) {
+			draw_file_names.clear();
 			cgv::utils::dir::glob(draw_file_path, draw_file_names, "drawing_*.gph", false, true);
 			if (draw_file_names.empty())
 				current_drawing_idx = 0;
@@ -406,56 +418,59 @@ public:
 		vr_tool::init_frame(ctx);
 		
 		if (scene_ptr) {
-			if (li_help[0] == -1) {
+			if (ctrl_infos[0].li_help == -1) {
 				li_stats = scene_ptr->add_label(
 					"drawing index: 000000\n"
 					"nr vertices:   000000\n"
 					"nr edges:      000000", rgba(0.8f, 0.6f, 0.0f, 1.0f));
 				scene_ptr->fix_label_size(li_stats);
 				scene_ptr->place_label(li_stats, vec3(0.0f, 0.01f, 0.0f), quat(vec3(1, 0, 0), -1.5f), vr_scene::CS_TABLE);
-				for (int ci = 0; ci < 2; ++ci) {
-					li_help[ci] = scene_ptr->add_label("DPAD_Right .. next/new drawing\nDPAD_Left  .. prev drawing\nDPAD_Down  .. save drawing\nDPAD_Up .. toggle draw mode\nTPAD_Touch&Up/Dn .. change radius\nTPAD_Touch&Move .. change color\ncolorize (0.000)\nRGB(0.00,0.00,0.00)\nHLS(0.00,0.00,0.00)",
+				for (int ci = 0; ci < 8; ++ci) {
+					ctrl_infos[ci].li_help = scene_ptr->add_label("DPAD_Right .. next/new drawing\nDPAD_Left  .. prev drawing\nDPAD_Down  .. save drawing\nDPAD_Up .. toggle draw mode\nTPAD_Touch&Up/Dn .. change radius\nTPAD_Touch&Move .. change color\ncolorize (0.000)\nRGB(0.00,0.00,0.00)\nHLS(0.00,0.00,0.00)",
 						rgba(ci == 0 ? 0.8f : 0.4f, 0.4f, ci == 1 ? 0.8f : 0.4f, 1.0f));
-					scene_ptr->fix_label_size(li_help[ci]);
-					scene_ptr->place_label(li_help[ci], vec3(ci == 1 ? -0.05f : 0.05f, 0.0f, 0.0f), quat(vec3(1, 0, 0), -1.5f),
+					scene_ptr->fix_label_size(ctrl_infos[ci].li_help);
+					scene_ptr->place_label(ctrl_infos[ci].li_help, vec3(ci == 1 ? -0.05f : 0.05f, 0.0f, 0.0f), quat(vec3(1, 0, 0), -1.5f),
 						ci == 0 ? vr_scene::CS_LEFT_CONTROLLER : vr_scene::CS_RIGHT_CONTROLLER, ci == 1 ? vr_scene::LA_RIGHT : vr_scene::LA_LEFT, 0.2f);
-					scene_ptr->hide_label(li_help[ci]);
+					scene_ptr->hide_label(ctrl_infos[ci].li_help);
 				}
 			}
 			// update visibility of visibility changing labels
 			if (scene_ptr && vr_view_ptr && vr_view_ptr->get_current_vr_state()) {
 				vec3 view_dir = -reinterpret_cast<const vec3&>(vr_view_ptr->get_current_vr_state()->hmd.pose[6]);
 				vec3 view_pos = reinterpret_cast<const vec3&>(vr_view_ptr->get_current_vr_state()->hmd.pose[9]);
-				for (int ci = 0; ci < 2; ++ci) {
+				for (int ci = 0; ci < 8; ++ci) {
+					if (vr_view_ptr->get_current_vr_state()->controller[ci].status != vr::VRS_TRACKED)
+						continue;
 					vec3 controller_pos = reinterpret_cast<const vec3&>(vr_view_ptr->get_current_vr_state()->controller[ci].pose[9]);
 					float controller_depth = dot(view_dir, controller_pos - view_pos);
 					float controller_dist = (view_pos + controller_depth * view_dir - controller_pos).length();
 					if (view_dir.y() < -0.5f && controller_depth / controller_dist > 5.0f)
-						scene_ptr->show_label(li_help[ci]);
+						scene_ptr->show_label(ctrl_infos[ci].li_help);
 					else
-						scene_ptr->hide_label(li_help[ci]);
+						scene_ptr->hide_label(ctrl_infos[ci].li_help);
 				}
 			}
 
 		}
 		static const char* draw_mode_str[] = { "point","line","colorize" };
-		for (int ci = 0; ci < 2; ++ci) {
-			if (li_help[ci] == -1)
+		for (int ci = 0; ci < 8; ++ci) {
+			controller_info& CI = ctrl_infos[ci];
+			if (CI.li_help == -1)
 				continue;
 			// update help text
-			cgv::media::color<float, cgv::media::HLS> hls = draw_color[ci];
+			cgv::media::color<float, cgv::media::HLS> hls = CI.draw_color;
 			std::stringstream ss;
 			ss << "DPAD_Right .. next/new drawing\nDPAD_Left  .. prev drawing\nDPAD_Down  .. save drawing\nDPAD_Up .. toggle draw mode\nTPAD_Touch&Up/Dn .. change radius\nTPAD_Touch&Move .. change color\n"
-				<< draw_mode_str[draw_mode[ci]] << " (" << std::setw(4) << std::setprecision(2) << draw_radius[ci] << ")"
-				<< "\nRGB(" << std::setw(4) << std::setprecision(2) << draw_color[ci][0] << "," << std::setw(4) << std::setprecision(2) << draw_color[ci][1] << "," << std::setw(4) << std::setprecision(2) << draw_color[ci][2] << ")"
+				<< draw_mode_str[CI.draw_mode] << " (" << std::setw(4) << std::setprecision(2) << CI.draw_radius << ")"
+				<< "\nRGB(" << std::setw(4) << std::setprecision(2) << CI.draw_color[0] << "," << std::setw(4) << std::setprecision(2) << CI.draw_color[1] << "," << std::setw(4) << std::setprecision(2) << CI.draw_color[2] << ")"
 				<< "\nHLS(" << std::setw(4) << std::setprecision(2) << hls[0] << "," << std::setw(4) << std::setprecision(2) << hls[1] << "," << std::setw(4) << std::setprecision(2) << hls[2] << ")";
 			ss.flush();
-			scene_ptr->update_label_text(li_help[ci], ss.str());
+			scene_ptr->update_label_text(CI.li_help, ss.str());
 			// update visibility of labels
-			if (in_color_selection[ci])
-				scene_ptr->show_label(li_help[ci]);
+			if (CI.in_color_selection)
+				scene_ptr->show_label(CI.li_help);
 			else
-				scene_ptr->hide_label(li_help[ci]);
+				scene_ptr->hide_label(CI.li_help);
 		}
 	}
 	void clear(cgv::render::context& ctx)
@@ -494,12 +509,14 @@ public:
 		std::vector<vec3> P;
 		std::vector<float> R;
 		std::vector<rgb> C;
-		for (int ci = 0; ci < 2; ++ci)
-			if (draw_mode[ci] != DM_COLORIZE && state_ptr->controller[ci].status == vr::VRS_TRACKED) {
+		for (int ci = 0; ci < 8; ++ci) {
+			controller_info& CI = ctrl_infos[ci];
+			if (CI.draw_mode != DM_COLORIZE && state_ptr->controller[ci].status == vr::VRS_TRACKED) {
 				P.push_back(compute_lab_draw_position(state_ptr->controller[ci].pose));
-				R.push_back(drawing[ci] ? last_radius[ci] : draw_radius[ci]);
-				C.push_back(draw_color[ci]);
+				R.push_back(CI.drawing ? CI.last_radius : CI.draw_radius);
+				C.push_back(CI.draw_color);
 			}
+		}
 		if (!P.empty()) {
 			sr.set_position_array(ctx, P);
 			sr.set_radius_array(ctx, R);
@@ -519,15 +536,17 @@ public:
 		std::vector<vec3> P;
 		std::vector<float> R;
 		std::vector<rgba> C;
-		for (int ci = 0; ci < 2; ++ci)
-			if (draw_mode[ci] == DM_COLORIZE && state_ptr->controller[ci].status == vr::VRS_TRACKED) {
+		for (int ci = 0; ci < 8; ++ci) {
+			controller_info& CI = ctrl_infos[ci];
+			if (CI.draw_mode == DM_COLORIZE && state_ptr->controller[ci].status == vr::VRS_TRACKED) {
 				P.push_back(compute_lab_draw_position(state_ptr->controller[ci].pose, vec3(0.0f)));
 				R.push_back(0.01f);
-				C.push_back(draw_color[ci]); C.back().alpha() = 0.5f;
-				P.push_back(compute_lab_draw_position(state_ptr->controller[ci].pose, vec3(0.0f, 0.0f, -50*draw_radius[ci])));
-				R.push_back(10*draw_radius[ci]);
-				C.push_back(draw_color[ci]); C.back().alpha() = 0.5f;
+				C.push_back(CI.draw_color); C.back().alpha() = 0.5f;
+				P.push_back(compute_lab_draw_position(state_ptr->controller[ci].pose, vec3(0.0f, 0.0f, -50 * CI.draw_radius)));
+				R.push_back(10 * CI.draw_radius);
+				C.push_back(CI.draw_color); C.back().alpha() = 0.5f;
 			}
+		}
 		if (P.empty())
 			return;
 
@@ -572,12 +591,12 @@ public:
 			switch (ke.get_key()) {
 			case 'M': 
 				if (ke.get_modifiers() == cgv::gui::EM_SHIFT) {
-					draw_mode[1] = draw_mode[1] == DM_COLORIZE ? DM_POINT : DrawMode(draw_mode[1] + 1);
-					on_set(&draw_mode[1]);
+					ctrl_infos[1].draw_mode = ctrl_infos[1].draw_mode == DM_COLORIZE ? DM_POINT : DrawMode(ctrl_infos[1].draw_mode + 1);
+					on_set(&ctrl_infos[1].draw_mode);
 				}
 				else {
-					draw_mode[0] = draw_mode[0] == DM_COLORIZE ? DM_POINT : DrawMode(draw_mode[0] + 1);
-					on_set(&draw_mode[0]);
+					ctrl_infos[0].draw_mode = ctrl_infos[0].draw_mode == DM_COLORIZE ? DM_POINT : DrawMode(ctrl_infos[0].draw_mode + 1);
+					on_set(&ctrl_infos[0].draw_mode);
 				}
 				return true;
 			}
@@ -588,53 +607,59 @@ public:
 			int ci = vrke.get_controller_index();
 			switch (vrke.get_key()) {
 			case vr::VR_DPAD_RIGHT:
-				if (vertices.empty())
-					return false;
-				if (current_drawing_idx >= (int)draw_file_names.size())
-					draw_file_names.push_back(get_new_draw_file_name());
-				if (vertices.size() > 0)
-					write_drawing(draw_file_path + "/" + draw_file_names[current_drawing_idx]);
-				++current_drawing_idx;
-				if (current_drawing_idx >= (int)draw_file_names.size())
-					clear_drawing();
-				else
-					read_drawing(draw_file_path + "/" + draw_file_names[current_drawing_idx]);
+				if (vrke.get_action() == cgv::gui::KA_PRESS) {
+					if (vertices.empty())
+						return false;
+					if (current_drawing_idx >= (int)draw_file_names.size())
+						draw_file_names.push_back(get_new_draw_file_name());
+					if (vertices.size() > 0)
+						write_drawing(draw_file_path + "/" + draw_file_names[current_drawing_idx]);
+					++current_drawing_idx;
+					if (current_drawing_idx >= (int)draw_file_names.size())
+						clear_drawing();
+					else
+						read_drawing(draw_file_path + "/" + draw_file_names[current_drawing_idx]);
+				}
 				return true;
 			case vr::VR_DPAD_LEFT:
-				if (current_drawing_idx > 0) {
-					if (vertices.size() > 0) {
-						if (current_drawing_idx >= (int)draw_file_names.size())
-							draw_file_names.push_back(get_new_draw_file_name());
-						write_drawing(draw_file_path + "/" + draw_file_names[current_drawing_idx]);
+				if (vrke.get_action() == cgv::gui::KA_PRESS) {
+					if (current_drawing_idx > 0) {
+						if (vertices.size() > 0) {
+							if (current_drawing_idx >= (int)draw_file_names.size())
+								draw_file_names.push_back(get_new_draw_file_name());
+							write_drawing(draw_file_path + "/" + draw_file_names[current_drawing_idx]);
+						}
+						--current_drawing_idx;
+						read_drawing(draw_file_path + "/" + draw_file_names[current_drawing_idx]);
 					}
-					--current_drawing_idx;
-					read_drawing(draw_file_path + "/" + draw_file_names[current_drawing_idx]);
 				}
 				return true;
 			case vr::VR_DPAD_DOWN:
-				if (current_drawing_idx >= (int)draw_file_names.size())
-					draw_file_names.push_back(get_new_draw_file_name());
-				write_drawing(draw_file_path + "/" + draw_file_names[current_drawing_idx]);
+				if (vrke.get_action() == cgv::gui::KA_PRESS) {
+					if (current_drawing_idx >= (int)draw_file_names.size())
+						draw_file_names.push_back(get_new_draw_file_name());
+					write_drawing(draw_file_path + "/" + draw_file_names[current_drawing_idx]);
+				}
 				return true;
 			case vr::VR_DPAD_UP:
 				if (vrke.get_action() == cgv::gui::KA_PRESS) {
-					draw_mode[ci] = draw_mode[ci] == DM_COLORIZE ? DM_POINT : DrawMode(draw_mode[ci] + 1);
-					on_set(&draw_mode[ci]);
+					ctrl_infos[ci].draw_mode = ctrl_infos[ci].draw_mode == DM_COLORIZE ? DM_POINT : DrawMode(ctrl_infos[ci].draw_mode + 1);
+					on_set(&ctrl_infos[ci].draw_mode);
 				}
 				return true;
 			case vr::VR_GRIP:
 				if (vrke.get_action() == cgv::gui::KA_PRESS) {
-					in_color_selection[ci] = true;
-					color_selection_ref[ci] = reinterpret_cast<const vec3&>(vrke.get_state().controller[ci].pose[9]);
-					last_color[ci] = draw_color[ci];
+					ctrl_infos[ci].in_color_selection = true;
+					ctrl_infos[ci].color_selection_ref = reinterpret_cast<const vec3&>(vrke.get_state().controller[ci].pose[9]);
+					ctrl_infos[ci].last_color = ctrl_infos[ci].draw_color;
 				}
 				else {
-					in_color_selection[ci] = false;
+					ctrl_infos[ci].in_color_selection = false;
 				}
 				return true;
 			case vr::VR_INPUT0:
 				if (vrke.get_action() == cgv::gui::KA_PRESS)
-					start_drawing(vrke.get_controller_index(), vrke.get_state(), vrke.get_time(), draw_radius[vrke.get_controller_index()]);
+					start_drawing(vrke.get_controller_index(), vrke.get_state(), vrke.get_time(), ctrl_infos[vrke.get_controller_index()].draw_radius);
 				else
 					stop_drawing(vrke.get_controller_index(), vrke.get_state(), vrke.get_time());
 				return true;
@@ -647,14 +672,14 @@ public:
 			float v = te.get_value();
 			bool d = v >= min_trigger;
 			if (d) {
-				if (drawing[ci]) {
-					last_radius[ci] = min_radius + (max_radius - min_radius) * (v - min_trigger) / (1.0f - min_trigger);
-					continue_drawing(ci, te.get_state(), te.get_time(), last_radius[ci]);
+				if (ctrl_infos[ci].drawing) {
+					ctrl_infos[ci].last_radius = min_radius + (max_radius - min_radius) * (v - min_trigger) / (1.0f - min_trigger);
+					continue_drawing(ci, te.get_state(), te.get_time(), ctrl_infos[ci].last_radius);
 				}
 				else
 					start_drawing(ci, te.get_state(), te.get_time(), min_radius);
 			}
-			else if (drawing[ci])
+			else if (ctrl_infos[ci].drawing)
 				stop_drawing(ci, te.get_state(), te.get_time(), min_radius);
 		}
 		else if (e.get_kind() == cgv::gui::EID_STICK) {
@@ -662,17 +687,17 @@ public:
 			int ci = se.get_controller_index();
 			switch (se.get_action()) {
 			case cgv::gui::SA_TOUCH :
-				in_radius_adjustment[ci] = true;
-				initial_radius[ci] = draw_radius[ci];
-				initial_y[ci] = se.get_y();
+				ctrl_infos[ci].in_radius_adjustment = true;
+				ctrl_infos[ci].initial_radius = ctrl_infos[ci].draw_radius;
+				ctrl_infos[ci].initial_y = se.get_y();
 				return true;
 			case cgv::gui::SA_RELEASE:
-				in_radius_adjustment[ci] = false;
+				ctrl_infos[ci].in_radius_adjustment = false;
 				return true;
 			case cgv::gui::SA_MOVE:
-				if (in_radius_adjustment[ci]) {
-					draw_radius[ci] = initial_radius[ci] * exp(se.get_y() - initial_y[ci]);
-					update_member(&draw_radius[ci]);
+				if (ctrl_infos[ci].in_radius_adjustment) {
+					ctrl_infos[ci].draw_radius = ctrl_infos[ci].initial_radius * exp(se.get_y() - ctrl_infos[ci].initial_y);
+					update_member(&ctrl_infos[ci].draw_radius);
 				}
 				return true;
 			}
@@ -681,17 +706,17 @@ public:
 		else if (e.get_kind() == cgv::gui::EID_POSE) {
 			auto& pe = static_cast<cgv::gui::vr_pose_event&>(e);
 			int ci = pe.get_trackable_index();
-			if (ci >= 0 && ci < 2) {
-				if (in_color_selection[ci]) {					
-					vec3 dp = reinterpret_cast<const vec3&>(pe.get_state().controller[ci].pose[9]) - color_selection_ref[ci];
-					cgv::media::color<float, cgv::media::HLS> hls = last_color[ci];
+			if (ci >= 0 && ci < 8) {
+				if (ctrl_infos[ci].in_color_selection) {
+					vec3 dp = reinterpret_cast<const vec3&>(pe.get_state().controller[ci].pose[9]) - ctrl_infos[ci].color_selection_ref;
+					cgv::media::color<float, cgv::media::HLS> hls = ctrl_infos[ci].last_color;
 					for (int k = 0; k < 3; ++k)
 						hls[k] = std::max(0.0f,std::min(1.0f,hls[k] + 4.0f * dp[k]));
-					draw_color[ci] = hls;
-					update_member(&draw_color[ci]);
+					ctrl_infos[ci].draw_color = hls;
+					update_member(&ctrl_infos[ci].draw_color);
 					return true;
 				}
-				else if (drawing[ci]) {
+				else if (ctrl_infos[ci].drawing) {
 					continue_drawing(ci, pe.get_state(), pe.get_time());
 					return true;
 				}
@@ -707,19 +732,23 @@ public:
 		add_member_control(this, "draw_file_path", draw_file_path, "directory");
 		//		"open=true;open_title='open scene file';filter='scene (scn):*.scn|all files:*.*';"
 		//"save=true;save_title='save scene file';w=140");
-		if (begin_tree_node("interaction", draw_mode)) {
+		if (begin_tree_node("interaction", ctrl_infos)) {
 			align("\a");
-			add_member_control(this, "left_draw_mode", draw_mode[0], "dropdown", "enums='point,line,colorize'");
-			add_member_control(this, "right_draw_mode", draw_mode[1], "dropdown", "enums='point,line,colorize'");
-			add_member_control(this, "left_draw_radius", draw_radius[0], "value_slider", "min=0.001;max=0.2;step=0.00001;log=true;ticks=true");
-			add_member_control(this, "right_draw_radius", draw_radius[1], "value_slider", "min=0.001;max=0.2;step=0.00001;log=true;ticks=true");
-			add_member_control(this, "left_draw_color", draw_color[0]);
-			add_member_control(this, "right_draw_color", draw_color[1]);
 			add_member_control(this, "draw_distance", draw_distance, "value_slider", "min=0.01;max=0.5;log=true;step=0.00001;ticks=true");
 			add_member_control(this, "creation_threshold", creation_threshold, "value_slider", "min=0.001;max=0.1;log=true;step=0.00001;ticks=true");
 			add_member_control(this, "min_trigger", min_trigger, "value_slider", "min=0.01;max=0.5;log=true;step=0.00001;ticks=true");
 			add_member_control(this, "min_radius", min_radius, "value_slider", "min=0.001;max=0.1;log=true;step=0.00001;ticks=true");
 			add_member_control(this, "max_radius", max_radius, "value_slider", "min=0.1;max=2;log=true;step=0.00001;ticks=true");
+			for (int ci = 0; ci < 8; ++ci) {
+				controller_info& CI = ctrl_infos[ci];
+				if (begin_tree_node(std::string("C") + cgv::utils::to_string(ci), CI)) {
+					align("\a");
+					add_member_control(this, "draw_mode", CI.draw_mode, "dropdown", "enums='point,line,colorize'");
+					add_member_control(this, "draw_radius", CI.draw_radius, "value_slider", "min=0.001;max=0.2;step=0.00001;log=true;ticks=true");
+					add_member_control(this, "draw_color", CI.draw_color);
+					align("\b");
+				}
+			}
 			align("\b");
 			end_tree_node(srs);
 		}
